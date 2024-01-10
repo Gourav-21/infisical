@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { subject } from "@casl/ability";
 import {
   faArrowDown,
   faArrowUp,
+  faPlus,
   faFolderBlank,
   faMagnifyingGlass
 } from "@fortawesome/free-solid-svg-icons";
@@ -12,7 +14,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 import { useNotificationContext } from "@app/components/context/Notifications/NotificationProvider";
 import NavHeader from "@app/components/navigation/NavHeader";
-import { PermissionDeniedBanner } from "@app/components/permissions";
+import { PermissionDeniedBanner, ProjectPermissionCan } from "@app/components/permissions";
 import {
   Button,
   EmptyState,
@@ -29,13 +31,14 @@ import {
   Tooltip,
   Tr
 } from "@app/components/v2";
-import { useOrganization, useWorkspace } from "@app/context";
+import { ProjectPermissionActions, ProjectPermissionSub, useOrganization, useWorkspace } from "@app/context";
 import {
   useCreateFolder,
   useCreateSecretV3,
   useDeleteSecretV3,
   useGetFoldersByEnv,
   useGetProjectSecretsAllEnv,
+  useGetSecretApprovalPolicyOfABoard,
   useGetUserWsKey,
   useUpdateSecretV3
 } from "@app/hooks/api";
@@ -45,6 +48,8 @@ import { ProjectIndexSecretsSection } from "./components/ProjectIndexSecretsSect
 // import { ProjectIndexSecretsSection } from "./components/ProjectIndexSecretsSection";
 import { SecretOverviewFolderRow } from "./components/SecretOverviewFolderRow";
 import { SecretOverviewTableRow } from "./components/SecretOverviewTableRow";
+import { PopUpNames, usePopUpAction } from "../SecretMainPage/SecretMainPage.store";
+import { CreateSecretForm } from "../SecretMainPage/components/CreateSecretForm";
 
 export const SecretOverviewPage = () => {
   const { t } = useTranslation();
@@ -78,6 +83,15 @@ export const SecretOverviewPage = () => {
   const { data: latestFileKey } = useGetUserWsKey(workspaceId);
   const [searchFilter, setSearchFilter] = useState("");
   const secretPath = (router.query?.secretPath as string) || "/";
+
+  const [environment, setEnvirnment] = useState();
+  const { openPopUp } = usePopUpAction();
+  const { data: boardPolicy } = useGetSecretApprovalPolicyOfABoard({
+    workspaceId,
+    environment,
+    secretPath
+  });
+  const isProtectedBranch = Boolean(boardPolicy);
 
   useEffect(() => {
     if (!isWorkspaceLoading && !workspaceId && router.isReady) {
@@ -294,7 +308,7 @@ export const SecretOverviewPage = () => {
           >
             Infisical SDKs
           </a>
-          , and 
+          , and
           <a
             className="ml-1 text-mineshaft-300 underline underline-offset-4 decoration-primary-800 hover:decoration-primary-600 hover:text-mineshaft-100 duration-200"
             href="https://infisical.com/docs/documentation/getting-started/introduction"
@@ -437,15 +451,43 @@ export const SecretOverviewPage = () => {
                 {userAvailableEnvs.map(({ name, slug }) => (
                   <Td key={`explore-${name}-btn`} className="border-0 border-mineshaft-600 p-0">
                     <div className="flex w-full items-center justify-center border-r border-t border-mineshaft-600 px-5 py-2">
+                      <ProjectPermissionCan
+                        I={ProjectPermissionActions.Create}
+                        a={subject(ProjectPermissionSub.Secrets, { slug, secretPath })}
+                      >
+                        {(isAllowed) => (
+                          <Button
+                            size="xs"
+                            variant="outline_bg"
+                            onClick={() => {
+                              setEnvirnment(slug);
+                              openPopUp(PopUpNames.CreateSecretForm)
+                            }}
+                            className="rounded-r-none"
+                            isDisabled={!isAllowed}
+                          >
+                            <FontAwesomeIcon icon={faPlus} />
+                          </Button>
+                        )}
+                      </ProjectPermissionCan>
                       <Button
                         size="xs"
                         variant="outline_bg"
+                        className="rounded-l-none"
                         isFullWidth
                         onClick={() => handleExploreEnvClick(slug)}
                       >
                         Explore
                       </Button>
                     </div>
+                    <CreateSecretForm
+                      environment={environment}
+                      workspaceId={workspaceId}
+                      decryptFileKey={latestFileKey!}
+                      secretPath={secretPath}
+                      autoCapitalize={currentWorkspace?.autoCapitalization}
+                      isProtectedBranch={isProtectedBranch}
+                    />
                   </Td>
                 ))}
               </Tr>
